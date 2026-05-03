@@ -29,7 +29,7 @@ Uses LLMs (cloud or local) to analyze log files and detect suspicious activity. 
 ### 1. Clone & Install Dependencies
 
 ```bash
-git clone https://github.com/yourusername/ai-log-analyzer.git
+git clone https://github.com/D3V0P5/ai-log-analyzer.git
 cd ai-log-analyzer
 pip install -r requirements.txt
 ```
