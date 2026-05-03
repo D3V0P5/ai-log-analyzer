@@ -329,4 +329,11 @@ For production use with real logs, **use the Ollama backend** to keep data entir
 
 MIT — free for personal, educational, and commercial use.
 
----
+## Author
+
+Zrubavel Sharon — [GitHub D3V9P5](https://github.com/D3V0P5/)
+
+
+
+
+**Built with Python, Google Gemini, and Ollama**
