@@ -40,6 +40,332 @@ except Exception as e:
     print(f"❌ Cannot connect to Ollama: {e}")
     exit(1)
 
+
+# ============================================================
+# REFACTORED: Pure logic functions (no API calls)
+# ============================================================
+
+def parse_model_response(raw_response: str, line_num: int, file_name: str, original_line: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse model response and extract JSON.
+    Returns None if parsing fails.
+    
+    This function is PURE LOGIC — no API calls, suitable for unit testing.
+    """
+    if not raw_response:
+        return None
+    
+    raw = raw_response.strip()
+    
+    # Extract JSON from response
+    json_match = re.search(r'\{[^{}]*"severity"[^{}]*\}', raw, re.DOTALL)
+    if json_match:
+        raw = json_match.group()
+    
+    # Clean up common issues
+    raw = re.sub(r',\s*}', '}', raw)
+    raw = re.sub(r',\s*]', ']', raw)
+    
+    try:
+        result = json.loads(raw)
+        
+        # Validate severity
+        severity = result.get('severity', 'low')
+        if severity not in ['low', 'medium', 'high', 'critical']:
+            severity = 'low'
+        
+        # Validate category
+        category = result.get('category', 'unknown')
+        if category not in ['auth', 'network', 'system', 'application']:
+            category = 'unknown'
+        
+        return {
+            'line_number': line_num,
+            'source_file': file_name,
+            'original_line': original_line,
+            'severity': severity,
+            'category': category,
+            'is_suspicious': bool(result.get('is_suspicious', False)),
+            'brief_reason': result.get('brief_reason', '')[:50],
+        }
+    except json.JSONDecodeError:
+        return None
+def keyword_fallback(line: str, line_num: int, file_name: str) -> Dict[str, Any]:
+    """
+    Keyword-based analysis when JSON parsing fails.
+    
+    This function is PURE LOGIC — no API calls, suitable for unit testing.
+    """
+    lower = line.lower()
+    
+    # ============================================================
+    # SYSTEM EVENTS - CHECK FIRST (most specific)
+    # ============================================================
+    # Check for system-related keywords FIRST before anything else
+    system_keywords = ['memory', 'backup', 'process', 'sudo', 'exceeded', 'cpu', 'disk', 'service', 'daemon', 'systemd', 'pid']
+    for kw in system_keywords:
+        if kw in lower:
+            suspicious = any(word in lower for word in ['exceeded', 'failed', 'error', 'critical', 'panic'])
+            severity = 'high' if suspicious else 'low'
+            return {
+                'line_number': line_num,
+                'source_file': file_name,
+                'original_line': line,
+                'severity': severity,
+                'category': 'system',
+                'is_suspicious': suspicious,
+                'brief_reason': 'System event',
+                'analysis_timestamp': time.time()
+            }
+    
+    # ============================================================
+    # APPLICATION / API EVENTS
+    # ============================================================
+    app_keywords = ['api', 'request', 'get', 'post', 'delete', 'put', 'http', 'https', 'endpoint', 'response', 'status']
+    for kw in app_keywords:
+        if kw in lower:
+            suspicious = any(code in line for code in ['503', '500', '401', '403', '404', '502', '504', 'timeout'])
+            severity = 'high' if suspicious else 'low'
+            return {
+                'line_number': line_num,
+                'source_file': file_name,
+                'original_line': line,
+                'severity': severity,
+                'category': 'application',
+                'is_suspicious': suspicious,
+                'brief_reason': 'Application request',
+                'analysis_timestamp': time.time()
+            }
+    
+    # ============================================================
+    # AUTHENTICATION - Suspicious
+    # ============================================================
+    auth_suspicious = ['failed password', 'invalid user', 'authentication failure', 'bad password']
+    for kw in auth_suspicious:
+        if kw in lower:
+            return {
+                'line_number': line_num,
+                'source_file': file_name,
+                'original_line': line,
+                'severity': 'high',
+                'category': 'auth',
+                'is_suspicious': True,
+                'brief_reason': 'Authentication failure',
+                'analysis_timestamp': time.time()
+            }
+    
+    # ============================================================
+    # AUTHENTICATION - Successful
+    # ============================================================
+    auth_success = ['accepted password', 'successful login']
+    for kw in auth_success:
+        if kw in lower:
+            return {
+                'line_number': line_num,
+                'source_file': file_name,
+                'original_line': line,
+                'severity': 'low',
+                'category': 'auth',
+                'is_suspicious': False,
+                'brief_reason': 'Successful login',
+                'analysis_timestamp': time.time()
+            }
+    
+    # ============================================================
+    # NETWORK EVENTS
+    # ============================================================
+    network_keywords = ['connection closed', 'port', 'firewall', 'allow', 'deny', 'tcp', 'udp', 'icmp', 'ssh']
+    for kw in network_keywords:
+        if kw in lower:
+            suspicious = any(word in lower for word in ['deny', 'drop', 'reject', 'blocked'])
+            severity = 'medium' if suspicious else 'low'
+            return {
+                'line_number': line_num,
+                'source_file': file_name,
+                'original_line': line,
+                'severity': severity,
+                'category': 'network',
+                'is_suspicious': suspicious,
+                'brief_reason': 'Network event',
+                'analysis_timestamp': time.time()
+            }
+    
+    # ============================================================
+    # DEFAULT
+    # ============================================================
+    return {
+        'line_number': line_num,
+        'source_file': file_name,
+        'original_line': line,
+        'severity': 'low',
+        'category': 'unknown',
+        'is_suspicious': False,
+        'brief_reason': 'Log entry',
+        'analysis_timestamp': time.time()
+    }
+    """
+    Keyword-based analysis when JSON parsing fails.
+    
+    This function is PURE LOGIC — no API calls, suitable for unit testing.
+    """
+    lower = line.lower()
+    
+    # ============================================================
+    # SYSTEM EVENTS (check FIRST before application)
+    # ============================================================
+    #system_keywords = ['memory', 'backup', 'process', 'sudo', 'exceeded', 'cpu', 'disk', 'service', 'daemon', 'systemd', 'pid']
+    system_keywords = ['memory', 'backup', 'process', 'sudo', 'exceeded', 'cpu', 'disk', 'service', 'daemon', 'systemd', 'pid']
+    if any(word in lower for word in system_keywords):
+        suspicious = any(word in lower for word in ['exceeded', 'failed', 'error', 'critical', 'panic'])
+        severity = 'high' if suspicious else 'low'
+        return {
+            'line_number': line_num,
+            'source_file': file_name,
+            'original_line': line,
+            'severity': severity,
+            'category': 'system',
+            'is_suspicious': suspicious,
+            'brief_reason': 'System event',
+            'analysis_timestamp': time.time()
+        }
+    
+    # ============================================================
+    # APPLICATION / API EVENTS
+    # ============================================================
+    app_keywords = ['api', 'request', 'get', 'post', 'delete', 'put', 'http', 'https', 'endpoint', 'response', 'status', '503', '500', '401', '403', '404']
+    if any(word in lower for word in app_keywords):
+        suspicious = any(word in line for word in ['503', '500', '401', '403', '404', '502', '504', 'timeout'])
+        severity = 'high' if suspicious else 'low'
+        return {
+            'line_number': line_num,
+            'source_file': file_name,
+            'original_line': line,
+            'severity': severity,
+            'category': 'application',
+            'is_suspicious': suspicious,
+            'brief_reason': 'Application request',
+            'analysis_timestamp': time.time()
+        }
+    
+    # ============================================================
+    # AUTHENTICATION - Suspicious
+    # ============================================================
+    if any(word in lower for word in ['failed password', 'invalid user', 'authentication failure', 'bad password']):
+        return {
+            'line_number': line_num,
+            'source_file': file_name,
+            'original_line': line,
+            'severity': 'high',
+            'category': 'auth',
+            'is_suspicious': True,
+            'brief_reason': 'Authentication failure',
+            'analysis_timestamp': time.time()
+        }
+    
+    # ============================================================
+    # AUTHENTICATION - Successful
+    # ============================================================
+    if 'accepted password' in lower or 'successful login' in lower:
+        return {
+            'line_number': line_num,
+            'source_file': file_name,
+            'original_line': line,
+            'severity': 'low',
+            'category': 'auth',
+            'is_suspicious': False,
+            'brief_reason': 'Successful login',
+            'analysis_timestamp': time.time()
+        }
+    
+    # ============================================================
+    # NETWORK EVENTS
+    # ============================================================
+    network_keywords = ['connection closed', 'port', 'firewall', 'allow', 'deny', 'tcp', 'udp', 'icmp', 'ssh']
+    if any(word in lower for word in network_keywords):
+        suspicious = any(word in lower for word in ['deny', 'drop', 'reject', 'blocked'])
+        severity = 'medium' if suspicious else 'low'
+        return {
+            'line_number': line_num,
+            'source_file': file_name,
+            'original_line': line,
+            'severity': severity,
+            'category': 'network',
+            'is_suspicious': suspicious,
+            'brief_reason': 'Network event',
+            'analysis_timestamp': time.time()
+        }
+    
+    # ============================================================
+    # DEFAULT
+    # ============================================================
+    return {
+        'line_number': line_num,
+        'source_file': file_name,
+        'original_line': line,
+        'severity': 'low',
+        'category': 'unknown',
+        'is_suspicious': False,
+        'brief_reason': 'Log entry',
+        'analysis_timestamp': time.time()
+    }
+
+# ============================================================
+# MODIFIED: analyze_log_line now uses the refactored functions
+# ============================================================
+
+def analyze_log_line(line: str, line_num: int, file_name: str) -> Dict[str, Any]:
+    """Analyze a single log line using local Ollama model"""
+    
+    # Strip timestamp if present
+    parts = line.split(' ', 2)
+    if len(parts) >= 2 and parts[0].startswith('202'):
+        clean_line = parts[2] if len(parts) > 2 else line
+    else:
+        clean_line = line
+    
+    prompt = f"""Analyze this security log line. Return ONLY valid JSON. No other text.
+
+Log: {clean_line}
+
+Return exactly this format:
+{{"severity":"low","category":"auth","is_suspicious":false,"brief_reason":"Normal event"}}
+
+Valid severity values: low, medium, high, critical
+Valid category values: auth, network, system, application
+
+JSON:"""
+
+    try:
+        response = client.generate(
+            model=MODEL_NAME,
+            prompt=prompt,
+            options={
+                'temperature': 0.0,
+                'num_predict': 150,
+            }
+        )
+        
+        # USE THE REFACTORED PARSER
+        parsed = parse_model_response(response['response'], line_num, file_name, line)
+        
+        if parsed:
+            parsed['analysis_timestamp'] = time.time()
+            return parsed
+        
+        # If parsing failed, use fallback
+        return keyword_fallback(line, line_num, file_name)
+        
+    except Exception as e:
+        return {
+            'line_number': line_num,
+            'source_file': file_name,
+            'original_line': line,
+            'severity': 'low',
+            'category': 'unknown',
+            'is_suspicious': False,
+            'brief_reason': f'Error: {str(e)[:30]}',
+            'analysis_timestamp': time.time()
+        }
 # ============================================================
 # Analysis Function with Improved Prompt
 # ============================================================
@@ -283,6 +609,161 @@ def save_results(results: list, output_file: str = 'analysis_results_ollama.json
     with open(output_file, 'w') as f:
         json.dump(results, f, indent=2)
     print(f"\n💾 Full results saved to {output_file}")
+
+# ============================================================
+# For testing
+# ============================================================
+
+def parse_model_response(raw_response: str, line_num: int, file_name: str, original_line: str) -> Optional[Dict[str, Any]]:
+    """Parse model response and extract JSON - reusable for testing"""
+    import re
+    import json
+    
+    raw = raw_response.strip()
+    
+    # Extract JSON from response
+    json_match = re.search(r'\{[^{}]*"severity"[^{}]*\}', raw, re.DOTALL)
+    if json_match:
+        raw = json_match.group()
+    
+    # Clean up common issues
+    raw = re.sub(r',\s*}', '}', raw)
+    raw = re.sub(r',\s*]', ']', raw)
+    
+    try:
+        result = json.loads(raw)
+        severity = result.get('severity', 'low')
+        if severity not in ['low', 'medium', 'high', 'critical']:
+            severity = 'low'
+        
+        category = result.get('category', 'unknown')
+        if category not in ['auth', 'network', 'system', 'application']:
+            category = 'unknown'
+        
+        return {
+            'line_number': line_num,
+            'source_file': file_name,
+            'original_line': original_line,
+            'severity': severity,
+            'category': category,
+            'is_suspicious': bool(result.get('is_suspicious', False)),
+            'brief_reason': result.get('brief_reason', '')[:50],
+        }
+    except json.JSONDecodeError:
+        return None
+
+def keyword_fallback(line: str, line_num: int, file_name: str) -> Dict[str, Any]:
+    """
+    Keyword-based analysis when JSON parsing fails.
+    
+    This function is PURE LOGIC — no API calls, suitable for unit testing.
+    """
+    lower = line.lower()
+    
+    # ============================================================
+    # SYSTEM EVENTS (check FIRST before application)
+    # ============================================================
+    system_keywords = ['memory', 'backup', 'process', 'sudo', 'exceeded', 'cpu', 'disk', 'service', 'daemon', 'systemd', 'pid']
+    for kw in system_keywords:
+        if kw in lower:
+            suspicious = any(word in lower for word in ['exceeded', 'failed', 'error', 'critical', 'panic'])
+            severity = 'high' if suspicious else 'low'
+            return {
+                'line_number': line_num,
+                'source_file': file_name,
+                'original_line': line,
+                'severity': severity,
+                'category': 'system',
+                'is_suspicious': suspicious,
+                'brief_reason': 'System event',
+                'analysis_timestamp': time.time()
+            }
+    
+    # ============================================================
+    # APPLICATION / API EVENTS
+    # ============================================================
+    app_keywords = ['api', 'request', 'get', 'post', 'delete', 'put', 'http', 'https', 'endpoint', 'response', 'status']
+    for kw in app_keywords:
+        if kw in lower:
+            suspicious = any(code in line for code in ['503', '500', '401', '403', '404', '502', '504', 'timeout'])
+            severity = 'high' if suspicious else 'low'
+            return {
+                'line_number': line_num,
+                'source_file': file_name,
+                'original_line': line,
+                'severity': severity,
+                'category': 'application',
+                'is_suspicious': suspicious,
+                'brief_reason': 'Application request',
+                'analysis_timestamp': time.time()
+            }
+    
+    # ============================================================
+    # AUTHENTICATION - Suspicious
+    # ============================================================
+    auth_suspicious = ['failed password', 'invalid user', 'authentication failure', 'bad password']
+    for kw in auth_suspicious:
+        if kw in lower:
+            return {
+                'line_number': line_num,
+                'source_file': file_name,
+                'original_line': line,
+                'severity': 'high',
+                'category': 'auth',
+                'is_suspicious': True,
+                'brief_reason': 'Authentication failure',
+                'analysis_timestamp': time.time()
+            }
+    
+    # ============================================================
+    # AUTHENTICATION - Successful
+    # ============================================================
+    auth_success = ['accepted password', 'successful login']
+    for kw in auth_success:
+        if kw in lower:
+            return {
+                'line_number': line_num,
+                'source_file': file_name,
+                'original_line': line,
+                'severity': 'low',
+                'category': 'auth',
+                'is_suspicious': False,
+                'brief_reason': 'Successful login',
+                'analysis_timestamp': time.time()
+            }
+    
+    # ============================================================
+    # NETWORK EVENTS
+    # ============================================================
+    network_keywords = ['connection closed', 'port', 'firewall', 'allow', 'deny', 'tcp', 'udp', 'icmp', 'ssh']
+    for kw in network_keywords:
+        if kw in lower:
+            suspicious = any(word in lower for word in ['deny', 'drop', 'reject', 'blocked'])
+            severity = 'medium' if suspicious else 'low'
+            return {
+                'line_number': line_num,
+                'source_file': file_name,
+                'original_line': line,
+                'severity': severity,
+                'category': 'network',
+                'is_suspicious': suspicious,
+                'brief_reason': 'Network event',
+                'analysis_timestamp': time.time()
+            }
+    
+    # ============================================================
+    # DEFAULT
+    # ============================================================
+    return {
+        'line_number': line_num,
+        'source_file': file_name,
+        'original_line': line,
+        'severity': 'low',
+        'category': 'unknown',
+        'is_suspicious': False,
+        'brief_reason': 'Log entry',
+        'analysis_timestamp': time.time()
+    }
 
 # ============================================================
 # Main Execution

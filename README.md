@@ -201,6 +201,16 @@ ai-log-analyzer/
 | `requirements.txt`        | Python package dependencies                                                                  |
 | `synthetic_logs/`         | Directory containing generated`.log` files (gitignored)                                      |
 
+## Optional: REST API Server
+
+For programmatic access, an experimental FastAPI server is included:
+
+```bash
+python api_server.py
+# Swagger UI: http://localhost:8000/docs
+```
+
+
 ## Troubleshooting
 
 ### Rate Limits (Gemini)

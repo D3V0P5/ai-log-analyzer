@@ -82,6 +82,16 @@ class TestParseModelResponse:
 
 class TestKeywordFallback:
     """Test keyword-based fallback analysis"""
+    def test_system_event_detection(self):
+        """Should detect system events"""
+        line = "Process nginx (PID:1234) exceeded memory limit (2000MB > 1024MB)"
+        
+        result = keyword_fallback(line, 1, "test.log")
+        
+        # DEBUG: Print what we actually got
+        print(f"\nDEBUG: result = {result}")
+        
+        assert result['category'] == 'system'
 
     def test_auth_failure_detection(self):
         """Should detect failed password attempts"""

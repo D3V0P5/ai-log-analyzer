@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """
 Log Analysis REST API Server
 Provides HTTP endpoints for AI-powered log analysis with Gemini or Ollama
@@ -40,7 +40,7 @@ if USE_OLLAMA:
         import ollama
         OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
         client = ollama.Client(host=OLLAMA_HOST)
-        MODEL_NAME = os.environ.get("OLLAMA_MODEL", "deepseek-coder:7b")
+        MODEL_NAME = os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:7b")
         print(f"✓ Using Ollama backend at {OLLAMA_HOST} with model: {MODEL_NAME}")
     except ImportError:
         print("❌ Neither google-genai nor ollama is installed.")
@@ -108,68 +108,70 @@ app.add_middleware(
 
 def analyze_with_gemini(line: str, line_num: Optional[int] = None) -> dict:
     """Analyze log line using Google Gemini"""
+    from batch_analyze_ollama import parse_model_response, keyword_fallback
+    
     prompt = f"""
-Analyze this log line and return ONLY valid JSON. No explanation, no markdown.
+Analyze this security log line. Return ONLY valid JSON. No other text.
 
-Log line: {line}
+Log: {line}
 
-Return JSON with these exact fields:
-- severity (one of: low, medium, high, critical)
-- category (one of: auth, network, system, application)
-- is_suspicious (boolean)
-- brief_reason (string, max 50 chars)
+Return exactly this format:
+{{"severity":"low","category":"auth","is_suspicious":false,"brief_reason":"Normal event"}}
 
-Example: {{"severity":"high","category":"auth","is_suspicious":true,"brief_reason":"Failed login from external IP"}}
-"""
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt,
-        config={'response_mime_type': 'application/json'}
-    )
+Valid severity values: low, medium, high, critical
+Valid category values: auth, network, system, application
+
+JSON:"""
     
-    text = response.text.strip()
-    if text.startswith('```json'):
-        text = text[7:]
-    if text.startswith('```'):
-        text = text[3:]
-    if text.endswith('```'):
-        text = text[:-3]
-    
-    return json.loads(text)
+    try:
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+            config={'response_mime_type': 'application/json'}
+        )
+        
+        parsed = parse_model_response(response.text, line_num or 0, "api_call", line)
+        if parsed:
+            return parsed
+        
+        return keyword_fallback(line, line_num or 0, "api_call")
+    except Exception as e:
+        return keyword_fallback(line, line_num or 0, "api_call")
 
 def analyze_with_ollama(line: str, line_num: Optional[int] = None) -> dict:
     """Analyze log line using local Ollama"""
+    from batch_analyze_ollama import parse_model_response, keyword_fallback
+    
     prompt = f"""
-Analyze this log line and return ONLY valid JSON. No explanation, no markdown.
+Analyze this security log line. Return ONLY valid JSON. No other text.
 
-Log line: {line}
+Log: {line}
 
-Return JSON with these exact fields:
-- severity (one of: low, medium, high, critical)
-- category (one of: auth, network, system, application)
-- is_suspicious (boolean)
-- brief_reason (string, max 50 chars)
+Return exactly this format:
+{{"severity":"low","category":"auth","is_suspicious":false,"brief_reason":"Normal event"}}
 
-Example: {{"severity":"high","category":"auth","is_suspicious":true,"brief_reason":"Failed login from external IP"}}
-"""
-    response = client.generate(
-        model=MODEL_NAME,
-        prompt=prompt,
-        options={
-            'temperature': 0.1,
-            'num_predict': 256,
-        }
-    )
+Valid severity values: low, medium, high, critical
+Valid category values: auth, network, system, application
+
+JSON:"""
     
-    text = response['response'].strip()
-    if text.startswith('```json'):
-        text = text[7:]
-    if text.startswith('```'):
-        text = text[3:]
-    if text.endswith('```'):
-        text = text[:-3]
-    
-    return json.loads(text)
+    try:
+        response = client.generate(
+            model=MODEL_NAME,
+            prompt=prompt,
+            options={
+                'temperature': 0.0,
+                'num_predict': 150,
+            }
+        )
+        
+        parsed = parse_model_response(response['response'], line_num or 0, "api_call", line)
+        if parsed:
+            return parsed
+        
+        return keyword_fallback(line, line_num or 0, "api_call")
+    except Exception as e:
+        return keyword_fallback(line, line_num or 0, "api_call")
 
 def analyze_log_line(line: str, line_num: Optional[int] = None) -> dict:
     """Route to appropriate backend"""
