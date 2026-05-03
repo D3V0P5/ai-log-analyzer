@@ -14,7 +14,19 @@ import ollama
 # ============================================================
 # Configuration
 # ============================================================
+from pathlib import Path
+# Load .env file if it exists
+env_file = Path('.env')
+if env_file.exists():
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                os.environ[key.strip()] = value.strip()
 
+# Now get your variables 
+#GEMINI_KEY = os.environ.get('GEMINI_KEY') # Not on this script 
 OLLAMA_HOST = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
 MODEL_NAME = os.environ.get('OLLAMA_MODEL', 'deepseek-coder:7b')  # Use 7b, not 'latest'
 

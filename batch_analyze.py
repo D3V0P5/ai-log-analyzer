@@ -7,8 +7,20 @@ from google import genai  # NEW SDK IMPORT
 from google.genai import errors
 from typing import Dict, Any
 
-# Configure the NEW client
+from pathlib import Path
+# Load .env file if it exists
+env_file = Path('.env')
+if env_file.exists():
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                os.environ[key.strip()] = value.strip()
+
+# Now get your variables as usual
 GEMINI_KEY = os.environ.get('GEMINI_KEY')
+#OLLAMA_HOST = os.environ.get('OLLAMA_HOST', 'http://localhost:11434') # Used for the other script 
 
 if not GEMINI_KEY:
     print("Error: Set GEMINI_KEY environment variable")
