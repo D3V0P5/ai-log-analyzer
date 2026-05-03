@@ -25,14 +25,11 @@ class TestLogGeneration:
         f = io.StringIO()
         with redirect_stdout(f):
             generate_logs.generate_log_line('test')
-        
         # This is a placeholder since generate_logs is a script
-        # We'll refactor generate_logs.py to have reusable functions
         pass
     
     def test_log_format(self):
         """Log lines should have consistent format"""
-        # We need to refactor generate_logs.py first
         pass
 
 

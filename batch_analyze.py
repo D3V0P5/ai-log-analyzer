@@ -18,7 +18,6 @@ if env_file.exists():
                 key, value = line.split('=', 1)
                 os.environ[key.strip()] = value.strip()
 
-# Now get your variables as usual
 GEMINI_KEY = os.environ.get('GEMINI_KEY')
 #OLLAMA_HOST = os.environ.get('OLLAMA_HOST', 'http://localhost:11434') # Used for the other script 
 
@@ -66,8 +65,6 @@ def analyze_log_line_with_retry(line: str, line_num: int, file_name: str, max_re
 
 def analyze_log_line(line: str, line_num: int, file_name: str) -> Dict[str, Any]:
     """Analyze a single log line using the NEW Gemini SDK."""
-    
-    # Your prompt remains exactly the same
     prompt = f"""
 Analyze this log line and return ONLY valid JSON. No explanation, no markdown.
 

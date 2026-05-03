@@ -17,8 +17,6 @@ class TestAPIEndpoints:
 
     def test_health_endpoint(self):
         """GET /health should return service status"""
-        # This will need mocking of the backend
-        # For now, placeholder
         pass
 
     def test_analyze_endpoint_requires_json(self):

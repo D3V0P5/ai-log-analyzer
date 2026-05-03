@@ -22,9 +22,7 @@ class TestLogAnalyzerOllama:
         mock_client = MagicMock()
         mock_client.generate.return_value = {'response': '{"severity":"high","category":"auth","is_suspicious":true,"brief_reason":"Failed"}'}
         mock_client_class.return_value = mock_client
-        
-        # This will attempt a real call, so we need to mock more carefully
-        # For now, just verify the import works
+
         from batch_analyze_ollama import keyword_fallback
         result = keyword_fallback("Failed password for root", 1, "test.log")
         
